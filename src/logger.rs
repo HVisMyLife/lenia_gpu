@@ -2,7 +2,7 @@ use std::{collections::HashMap, fs::{self, File}, io::{Read, Write}, vec};
 use arrayfire::{Array, Dim4};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
-use crate::{Channel, Function, Layer, Lenia};
+use crate::{Channel, Function, Layer, Lenia, Shape};
 
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -39,7 +39,13 @@ impl PackageLenia {
 
             layer.source_key = l.source_key;
             layer.kernel = l.kernel.clone();
+            if layer.kernel.shape == Shape::GaussianBumpMulti {
+                while layer.kernel.parameters.len() % 3 != 0 {layer.kernel.parameters.push(1.);}
+            }
             layer.growth_map = l.growth_map.clone();
+            if layer.growth_map.shape == Shape::GaussianBumpMulti {
+                while layer.growth_map.parameters.len() % 3 != 0 {layer.growth_map.parameters.push(1.);}
+            }
             layer.radius = l.radius;
             layer.generate_kernel_lookup();
         });

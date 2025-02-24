@@ -1,5 +1,5 @@
 [package]
-name = "lenia"
+name = "lenia_gpu"
 version = "0.1.0"
 edition = "2021"
 
@@ -8,8 +8,6 @@ edition = "2021"
 [dependencies]
 arrayfire = { version = "^3.8", features = ["afserde"] }
 
-# macroquad = "^0.4"
-# egui-macroquad = "^0.15"
 eframe = { version = "^0.31", features = ["default","__screenshot",] }
 egui_extras = { version = "^0.31", features = ["default", "image", "svg"] }
 env_logger = { version = "^0.10", features = ["auto-color", "humantime",] }

@@ -1,4 +1,4 @@
-use lenia::{Cycle, PackageLenia, Shape};
+use lenia_gpu::{Cycle, Function, PackageLenia, Shape};
 use eframe::egui::{self, Color32, Frame, Key, Pos2, RichText, Stroke, Ui, UiBuilder, Vec2};
 use std::fs;
 use std::path::Path;
@@ -16,9 +16,10 @@ struct Handler {
     push_lenia: bool,
     load_lenia: (bool, u8),
     lenia: PackageLenia,
+    lenia_number: u8,
     delta: usize,
-    kernel_shape: [f32;100],
-    growth_shape: [f32;100],
+    kernel_shape: [f32;200],
+    growth_shape: [f32;200],
     layer_nr: usize,
     channel_nr: usize,
     arrow: Arrow
@@ -90,12 +91,16 @@ impl Arrow {
         if ctx.input(|i| i.key_pressed(Key::ArrowLeft) || i.key_pressed(Key::ArrowRight) || i.key_pressed(Key::Enter)) 
             { *x = !(*x) }
     }
-    fn cursor_shape(&mut self, ui: &mut Ui, ctx: &eframe::egui::Context, x: &mut Shape) {
+    fn cursor_shape(&mut self, ui: &mut Ui, ctx: &eframe::egui::Context, x: &mut Function) {
         self.runner += 1;
         if self.user != self.runner - 1 {return}
         ui.label(RichText::new("^^^^^^^^").color(Color32::RED));
-        if ctx.input(|i| i.key_pressed(Key::ArrowLeft)) {x.previous()}
-        else if ctx.input(|i| i.key_pressed(Key::ArrowRight)) {x.next()}
+        if ctx.input(|i| i.key_pressed(Key::ArrowLeft)) {x.shape.previous()}
+        else if ctx.input(|i| i.key_pressed(Key::ArrowRight)) {x.shape.next()}
+
+        if x.shape == Shape::GaussianBumpMulti {
+            while x.parameters.len() % 3 != 0 {x.parameters.push(1.);}
+        }
     }
     fn cursor_lenia(&mut self, ui: &mut Ui, ctx: &eframe::egui::Context) -> bool {
         self.runner += 1;
@@ -111,6 +116,7 @@ impl eframe::App for Handler {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.style_mut().override_text_style = Some(egui::TextStyle::Monospace);
+            ctx.set_zoom_factor(1.0);
             if ctx.input(|i| i.key_pressed(Key::ArrowUp)) {self.arrow.user -= 1}
             if ctx.input(|i| i.key_pressed(Key::ArrowDown)) {self.arrow.user += 1}
             if ctx.input(|i| i.key_pressed(Key::ArrowLeft) || i.key_pressed(Key::ArrowRight) || i.key_pressed(Key::Enter)) 
@@ -126,13 +132,14 @@ impl eframe::App for Handler {
 
             // TODO, remember what number have lenia at the moment
             let dirs = fs::read_dir("data/").unwrap().filter(|e| e.is_ok() ).filter(|e| e.as_ref().unwrap().path().is_dir() )
-                .map(|e| e.unwrap().path().file_name().unwrap().to_str().unwrap().to_owned().trim().parse::<usize>() ).filter(|e| e.is_ok() )
-                .map(|e| e.unwrap() ).collect::<Vec<usize>>();
+                .map(|e| e.unwrap().path().file_name().unwrap().to_str().unwrap().to_owned().trim().parse::<u8>() ).filter(|e| e.is_ok() )
+                .map(|e| e.unwrap() ).collect::<Vec<u8>>();
+            ui.label(format!("Loaded: {}", self.lenia_number));
             ui.label(format!("Found presets:"));
             dirs.iter().for_each(|d| { 
                 ui.label(format!(" - {}", d));
                 if self.load_lenia.0 {self.arrow.cursor_lenia(ui, ctx);}
-                else {self.load_lenia = (self.arrow.cursor_lenia(ui, ctx), (*d) as u8)}
+                else {self.load_lenia = (self.arrow.cursor_lenia(ui, ctx), *d)}
             });
 
             ui.heading("<<<<<<>>>>>>");
@@ -146,7 +153,7 @@ impl eframe::App for Handler {
                 ui.heading("------------");
                 ui.label( format!("Kernel") );
                 ui.label( format!("Shape: {}", layer.1.kernel.shape) );
-                self.arrow.cursor_shape(ui, ctx, &mut layer.1.kernel.shape );
+                self.arrow.cursor_shape(ui, ctx, &mut layer.1.kernel );
 
                 if layer.1.kernel.centering {ui.label( format!("With centering") );}
                 else                        {ui.label( format!("Without centering") );}
@@ -155,27 +162,28 @@ impl eframe::App for Handler {
                 else                        {ui.label( format!("With sigmoid-clip") );}
                 self.arrow.cursor_bool(ui, ctx, &mut layer.1.kernel.hard_clip );
                 layer.1.kernel.parameters.iter_mut().enumerate().for_each(|(i,p)|{
+                    if i > 1 && layer.1.kernel.shape != Shape::GaussianBumpMulti { return }
                     match i % 3 {
-                        0 => { ui.label(format!("{} Width: {:>.4}", i, *p));
+                        0 => { ui.label(format!("{} Width: {:>.4}", i/3, *p));
                             self.arrow.cursor_f32(ui, ctx, p ); }
-                        1 => { ui.label(format!("{} Offset: {:>.4}", i, *p));
+                        1 => { ui.label(format!("{} Offset: {:>.4}", i/3, *p));
                             self.arrow.cursor_f32(ui, ctx, p ); }
-                        2 => { ui.label(format!("{} Strength: {:>.4}", i, *p));
+                        2 => { ui.label(format!("{} Strength: {:>.4}", i/3, *p));
                             self.arrow.cursor_f32(ui, ctx, p ); }
                         _ => {}
                     }
                 });
                 self.kernel_shape.iter_mut().enumerate().for_each(|(i,y)|{
-                    let x = if i < 50 { 50. - i as f32 } else {(i+1) as f32 -50.};
-                    *y = layer.1.kernel._calc((x+1.) /50.) 
+                    let x = if i < 100 { 100. - i as f32 } else {(i+1) as f32 -100.};
+                    *y = layer.1.kernel._calc((x+1.) /100.) 
                 });
-                draw_lines_in_box(ui, &self.kernel_shape, 200., 50., false);
+                draw_lines_in_box(ui, &self.kernel_shape, 400. / ctx.zoom_factor(), 50., false);
 
                 ui.heading("------------");
 
                 ui.label( format!("Growth map") );
                 ui.label( format!("Shape: {}", layer.1.growth_map.shape) );
-                self.arrow.cursor_shape(ui, ctx, &mut layer.1.growth_map.shape );
+                self.arrow.cursor_shape(ui, ctx, &mut layer.1.growth_map );
                 if layer.1.growth_map.centering {ui.label( format!("With centering") );}
                 else                            {ui.label( format!("Without centering") );}
                 self.arrow.cursor_bool(ui, ctx, &mut layer.1.growth_map.centering );
@@ -183,19 +191,20 @@ impl eframe::App for Handler {
                 else                            {ui.label( format!("With sigmoid-clip") );}
                 self.arrow.cursor_bool(ui, ctx, &mut layer.1.growth_map.hard_clip );
                 layer.1.growth_map.parameters.iter_mut().enumerate().for_each(|(i,p)|{
+                    if i > 1 && layer.1.growth_map.shape != Shape::GaussianBumpMulti { return }
                     match i % 3 {
-                        0 => { ui.label(format!("{} Width: {:>.4}", i, *p));
+                        0 => { ui.label(format!("{} Width: {:>.4}", i/3, *p));
                             self.arrow.cursor_f32(ui, ctx, p );}
-                        1 => { ui.label(format!("{} Offset: {:>.4}", i, *p));
+                        1 => { ui.label(format!("{} Offset: {:>.4}", i/3, *p));
                             self.arrow.cursor_f32(ui, ctx, p );}
-                        2 => { ui.label(format!("{} Strength: {:>.4}", i, *p));
+                        2 => { ui.label(format!("{} Strength: {:>.4}", i/3, *p));
                             self.arrow.cursor_f32(ui, ctx, p );}
                         _ => {}
                     }
                 });
                 self.growth_shape.iter_mut().enumerate().for_each(|(x,y)| 
-                    *y = layer.1.growth_map._calc((x+1) as f32 /100.) );
-                draw_lines_in_box(ui, &self.growth_shape, 200., 50., true);
+                    *y = layer.1.growth_map._calc((x+1) as f32 /200.) );
+                draw_lines_in_box(ui, &self.growth_shape, 400. / ctx.zoom_factor(), 50., true);
             }
 
             ui.heading("<<<<<<>>>>>>");
@@ -232,9 +241,10 @@ impl Default for Handler {
             push_lenia: true,
             load_lenia: (false, 0),
             lenia: PackageLenia::empty(),
+            lenia_number: 0,
             delta: 0,
-            kernel_shape: [0.;100],
-            growth_shape: [0.;100],
+            kernel_shape: [0.;200],
+            growth_shape: [0.;200],
             layer_nr: 0,
             channel_nr: 0,
             arrow: Arrow::default()
@@ -254,11 +264,6 @@ impl Handler {
 
         if !request.is_empty() { self.pull_lenia = true; self.send(&request); }
         
-        if self.load_lenia.0 {
-            self.send(&vec![12, self.load_lenia.1]);
-            self.load_lenia.0 = false;
-            self.pull_lenia = true;
-        }
         if self.timers[0].elapsed().as_millis() > 250 { 
             let _ = self.send(&vec![9]);
             self.delta = self.buffer[0] as usize;
@@ -266,7 +271,8 @@ impl Handler {
         }
         if self.pull_lenia {
             let r = self.send(&vec![7]);
-            self.lenia = bincode::deserialize(&self.buffer[0..r]).unwrap();
+            self.lenia_number = self.buffer[0];
+            self.lenia = bincode::deserialize(&self.buffer[1..r]).unwrap();
             self.pull_lenia = false;
         }
         if self.push_lenia {
@@ -274,6 +280,11 @@ impl Handler {
             p.insert(0, 8);
             let _ = self.send(&p);
             self.push_lenia = false;
+        }
+        if self.load_lenia.0 {
+            self.send(&vec![12, self.load_lenia.1]);
+            self.load_lenia.0 = false;
+            self.pull_lenia = true;
         }
         true
     }
@@ -299,7 +310,7 @@ impl Handler {
 fn main() -> eframe::Result {
     env_logger::init();
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([512.0, 1024.0]),
+        viewport: egui::ViewportBuilder::default().with_inner_size([512.0, 1080.0]),
         ..Default::default()
     };
 
