@@ -1,0 +1,14 @@
+source_key = 0
+radius = 92
+
+[kernel]
+shape = "GaussianBumpMulti"
+centering = false
+parameters = [0.15, 0.5, 1.0]
+hard_clip = true
+
+[growth_map]
+shape = "GaussianBump"
+centering = true
+parameters = [0.011, 0.15]
+hard_clip = true
